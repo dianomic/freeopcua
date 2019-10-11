@@ -83,8 +83,12 @@ class RequestCallback
 public:
   RequestCallback(const Common::Logger::SharedPtr & logger)
     : Logger(logger)
-    , lock(m)
   {
+    m.lock();
+  }
+  ~RequestCallback()
+  {
+    m.unlock();
   }
 
   void OnData(std::vector<char> data, ResponseHeader h)
@@ -92,12 +96,12 @@ public:
     //std::cout << ToHexDump(data);
     Data = std::move(data);
     this->header = std::move(h);
-    doneEvent.notify_all();
+    m.unlock();
   }
 
   T WaitForData(std::chrono::milliseconds msec)
   {
-    if (doneEvent.wait_for(lock, msec) == std::cv_status::timeout)
+    if (m.try_lock_for(msec) == false)
       { throw std::runtime_error("Response timed out"); }
 
     T result;
@@ -122,9 +126,7 @@ private:
   Common::Logger::SharedPtr Logger;
   std::vector<char> Data;
   ResponseHeader header;
-  std::mutex m;
-  std::unique_lock<std::mutex> lock;
-  std::condition_variable doneEvent;
+  std::timed_mutex m;
 };
 
 class CallbackThread
@@ -224,16 +226,8 @@ public:
   {
     //Initialize the worker thread for subscriptions
     callback_thread = std::thread([&]() { CallbackService.Run(); });
-    try
-      {
-        HelloServer(params);
-      }
-    catch (...)
-      {
-        CallbackService.Stop();
-        callback_thread.join();
-        throw;
-      }
+
+    HelloServer(params);
 
     ReceiveThread = std::thread([this]()
     {
@@ -844,8 +838,6 @@ public:
         const SymmetricAlgorithmHeader algorithmHeader = CreateAlgorithmHeader();
         hdr.AddSize(RawSize(algorithmHeader));
 
-        std::unique_lock<std::mutex> send_lock(send_mutex);
-
         const SequenceHeader sequence = CreateSequenceHeader();
         hdr.AddSize(RawSize(sequence));
 
@@ -878,7 +870,7 @@ private:
     std::unique_lock<std::mutex> lock(Mutex);
     Callbacks.insert(std::make_pair(request.Header.RequestHandle, responseCallback));
     lock.unlock();
-
+    
     LOG_DEBUG(Logger, "binary_client         | send: id: {} handle: {}, UtcTime: {}", ToString(request.TypeId, true), request.Header.RequestHandle, request.Header.UtcTime);
 
     Send(request);
@@ -893,6 +885,7 @@ private:
     catch (std::exception & ex)
       {
         //Remove the callback on timeout
+        LOG_DEBUG(Logger, "binary_client         | send exception: handle: {}", request.Header.RequestHandle);
         std::unique_lock<std::mutex> lock(Mutex);
         Callbacks.erase(request.Header.RequestHandle);
         lock.unlock();
@@ -913,12 +906,11 @@ private:
     const SymmetricAlgorithmHeader algorithmHeader = CreateAlgorithmHeader();
     hdr.AddSize(RawSize(algorithmHeader));
 
-    std::unique_lock<std::mutex> send_lock(send_mutex);
-
     const SequenceHeader sequence = CreateSequenceHeader();
     hdr.AddSize(RawSize(sequence));
     hdr.AddSize(RawSize(request));
 
+    std::unique_lock<std::mutex> send_lock(send_mutex);
     Stream << hdr << algorithmHeader << sequence << request << flush;
   }
 
@@ -983,7 +975,6 @@ private:
         if (callbackIt == Callbacks.end())
           {
             LOG_WARN(Logger, "binary_client         | no callback found for message id: {}, handle: {}", id, header.RequestHandle);
-            messageBuffer.clear();
             return;
           }
 
@@ -1135,8 +1126,6 @@ void BinaryClient::Send<OpenSecureChannelRequest>(OpenSecureChannelRequest reque
   algorithmHeader.ReceiverCertificateThumbPrint = Params.ReceiverCertificateThumbPrint;
   hdr.AddSize(RawSize(algorithmHeader));
   hdr.AddSize(RawSize(request));
-
-  std::unique_lock<std::mutex> send_lock(send_mutex);
 
   const SequenceHeader sequence = CreateSequenceHeader();
   hdr.AddSize(RawSize(sequence));
