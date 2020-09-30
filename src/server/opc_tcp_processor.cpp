@@ -364,10 +364,13 @@ void OpcTcpMessages::ProcessRequest(IStreamBinary & istream, OStreamBinary & ost
           for (ReadValueId id : params.AttributesToRead)
             {
               std::string name = "unknown";
+	      try
                 {
                   Node node(Server, id.NodeId);
                   name = node.GetBrowseName().Name;
                 }
+	      catch (std::runtime_error &r) {
+	      }
               Logger->debug("opc_tcp_processor     |   {} ({})", id.NodeId, name);
             }
         }
