@@ -169,6 +169,7 @@ EndpointDescription UaClient::SelectEndpoint(const std::string & endpoint)
 
   Common::Uri uri(endpoint);
   bool has_login = !uri.User().empty();
+  bool unsupportedSecurityPolicy = false;
 
   for (EndpointDescription ed : endpoints)
     {
@@ -205,8 +206,13 @@ EndpointDescription UaClient::SelectEndpoint(const std::string & endpoint)
                 }
             }
         }
+      else
+      {
+	      unsupportedSecurityPolicy = true;
+      }
     }
-
+  if (unsupportedSecurityPolicy)
+	  throw std::runtime_error("All available endpoints require security policies that are not supported");
   throw std::runtime_error("No supported endpoints found on server");
 }
 
