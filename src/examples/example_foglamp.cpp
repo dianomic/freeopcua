@@ -31,35 +31,75 @@ class SubClient : public SubscriptionHandler
   }
 };
 
+char buf[200], browseName[40], nodeName[80], cbuf[40];
+
 void browseTree(std::shared_ptr<spdlog::logger> logger, Node& node, int level)
 {
-	char buf[132];
-	QualifiedName nName = node.GetBrowseName();
-	snprintf(buf, sizeof(buf), "%*s node(%d:%s)", level * 8, " ", nName.NamespaceIndex, nName.Name.c_str());
-	logger->info(buf);
+	browseName[0] = 0;
+	try {
+		QualifiedName nName = node.GetBrowseName();
+		snprintf(browseName, sizeof(browseName), ", BrowseName is %d:%s", nName.NamespaceIndex, nName.Name.c_str());
+	} catch (...) {
+	}
+
+	nodeName[0] = 0;
+	try {
+		const NodeId id = node.GetId();
+		if (id.IsString())
+		{
+			snprintf(nodeName, sizeof(nodeName), "ns=%d;s=%s", id.GetNamespaceIndex(), id.GetStringIdentifier().c_str());
+		}
+		else if (id.IsInteger())
+		{
+			snprintf(nodeName, sizeof(nodeName), "ns=%d;i=%d", id.GetNamespaceIndex(), id.GetIntegerIdentifier());
+		}
+	} catch (...) {
+	}
 	std::vector<OpcUa::Node> variables = node.GetVariables();
 	if (variables.size() > 0)
 	{
-		snprintf(buf, sizeof(buf), "%*sNode (%d:%s) has %lu variables",
-					   level * 8, " ",
-                                                   nName.NamespaceIndex,
-                                                   nName.Name.c_str(),
+		snprintf(buf, sizeof(buf), "%*sNodeId %s%s, has %lu variables",
+					   level * 4, " ", nodeName, browseName,
                                                    variables.size());
-		logger->info(buf);
 	}
+	else
+	{
+		snprintf(buf, sizeof(buf), "%*sNodeId %s browseName %s",
+					   level * 4, " ", nodeName, browseName);
+	}
+
+	std::vector<OpcUa::Node> children = node.GetChildren();
+	if (children.size() > 0)
+	{
+		snprintf(cbuf, sizeof(cbuf), ", has %d children", (int)children.size());
+		strcat(buf, cbuf);
+	}
+	printf("%s\n", buf);
+
 	for (auto var : variables)
 	{
-		OpcUa::QualifiedName qName = var.GetBrowseName();
-		snprintf(buf, sizeof(buf), "%*s variable(%d:%s)", level * 8 + 4, " ", qName.NamespaceIndex, qName.Name.c_str());
-		logger->info(buf);
+		browseName[0] = 0;
+		try {
+			OpcUa::QualifiedName qName = var.GetBrowseName();
+			snprintf(browseName, sizeof(browseName), ", BrowseName is %d:%s", qName.NamespaceIndex, qName.Name.c_str());
+		} catch (...) {
+		}
+		nodeName[0] = 0;
+		try {
+			const NodeId id = var.GetId();
+			if (id.IsString())
+			{
+				snprintf(nodeName, sizeof(nodeName), "ns=%d;s=%s", id.GetNamespaceIndex(), id.GetStringIdentifier().c_str());
+			}
+			else if (id.IsInteger())
+			{
+				snprintf(nodeName, sizeof(nodeName), "ns=%d;i=%d", id.GetNamespaceIndex(), id.GetIntegerIdentifier());
+			}
+		} catch (...) {
+		}
+		snprintf(buf, sizeof(buf), "%*s - NodeId %s%s", level * 4, " ", nodeName, browseName);
+		printf("%s\n", buf);
 	}
-	std::vector<OpcUa::Node> children = node.GetChildren();
-	snprintf(buf, sizeof(buf), "%*sNode (%d:%s) has %lu children",
-					   level * 8, " ",
-                                           nName.NamespaceIndex,
-                                           nName.Name.c_str(),
-                                           children.size());
-	logger->info(buf);
 
 	for (auto child : children)
 	{
@@ -85,7 +125,7 @@ int main(int argc, char ** argv)
       if (argc > 1)
         { endpoint = argv[1]; }
 
-      logger->info("Connecting to: {}", endpoint);
+      printf("Connecting to: %s\n", endpoint.c_str());
 
       OpcUa::UaClient client(logger);
       client.Connect(endpoint);
@@ -97,7 +137,7 @@ int main(int argc, char ** argv)
       for (OpcUa::Node node : root.GetChildren())
         { logger->info("    {}", node); }
 
-      logger->info("Browse tree");
+      printf("\n\nBrowse OPC/UA root tree...\n");
       browseTree(logger, root, 0);
 
       //get and browse Objects node
@@ -107,16 +147,16 @@ int main(int argc, char ** argv)
       for (OpcUa::Node node : objects.GetChildren())
         { logger->info("    {}", node); }
 
-      logger->info("Browse objects tree");
+      printf("\n\nBrowse OPC/UA object tree...\n");
       browseTree(logger, objects, 0);
 
       //get a node from standard namespace using objectId
-      logger->info("NamespaceArray is:");
+      printf("NamespaceArray is:\n");
       OpcUa::Node nsnode = client.GetNode(ObjectId::Server_NamespaceArray);
       OpcUa::Variant ns = nsnode.GetValue();
 
       for (std::string d : ns.As<std::vector<std::string>>())
-        { logger->info("    {}", d); }
+        { printf("    %s\n", d.c_str()); }
 
       OpcUa::Node myvar;
       OpcUa::Node myobject;
@@ -157,7 +197,7 @@ int main(int argc, char ** argv)
       logger->info("Got sub handle: {}, sleeping 5 seconds", handle);
       std::this_thread::sleep_for(std::chrono::seconds(5));
 
-      logger->info("Disconnecting");
+      printf("Disconnecting'n");
       client.Disconnect();
       logger->flush();
       return 0;
