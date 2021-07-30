@@ -24,6 +24,7 @@
 #include <opc/ua/services/services.h>
 #include <opc/ua/node.h>
 #include <opc/ua/protocol/string_utils.h>
+#include <stdexcept>
 
 #ifdef SSL_SUPPORT_MBEDTLS
 #define MBEDTLS_X509_CRT_PARSE_C
@@ -52,7 +53,8 @@ void KeepAliveThread::Run()
   LOG_INFO(Logger, "keep_alive_thread     | starting");
 
   while (!StopRequest)
-    {
+  {
+    try {
       int64_t t_sleep = Period * 0.7;
       LOG_DEBUG(Logger, "keep_alive_thread     | sleeping for: {}ms", t_sleep);
 
@@ -82,7 +84,10 @@ void KeepAliveThread::Run()
       LOG_DEBUG(Logger, "keep_alive_thread     | read a variable from address space to keep session open");
 
       NodeToRead.GetValue();
+    } catch (std::exception& e) {
+      LOG_ERROR(Logger, "KeepAlive thread: {}", e.what());
     }
+  }
 
   Running = false;
 
