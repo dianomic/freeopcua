@@ -233,10 +233,14 @@ public:
     }
     catch(...)
     {
+        CallbackService.Stop();
+
         if (callback_thread.joinable())
         {
             callback_thread.join();
         }
+
+        throw;
     }
 
     ReceiveThread = std::thread([this]()
