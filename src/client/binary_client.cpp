@@ -227,7 +227,17 @@ public:
     //Initialize the worker thread for subscriptions
     callback_thread = std::thread([&]() { CallbackService.Run(); });
 
-    HelloServer(params);
+    try
+    {
+        HelloServer(params);
+    }
+    catch(...)
+    {
+        if (callback_thread.joinable())
+        {
+            callback_thread.join();
+        }
+    }
 
     ReceiveThread = std::thread([this]()
     {
@@ -256,13 +266,19 @@ public:
 
     LOG_DEBUG(Logger, "binary_client         | joining service thread");
 
-    callback_thread.join(); //Not sure it is necessary
+    if (callback_thread.joinable())
+    {
+        callback_thread.join(); 
+    }
 
     Channel->Stop();
 
     LOG_DEBUG(Logger, "binary_client         | joining receive thread");
 
-    ReceiveThread.join();
+    if (ReceiveThread.joinable())
+    {
+        ReceiveThread.join();
+    }
 
     LOG_DEBUG(Logger, "binary_client         | receive thread stopped");
   }
